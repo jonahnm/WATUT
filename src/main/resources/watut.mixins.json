@@ -7,13 +7,10 @@
     "client.SetupRotationsInject",
     "client.RenderPingIconInject",
     "client.GuiRender",
-    "client.ScreenRenderBackground",
-    "client.ScreenRenderWithTooltip",
+    "client.GuiRendererCapture",
     "client.GameRendererResize",
-    "client.ParticleEngineMixin",
     "client.NativeImageAccessor",
-    "client.RenderTargetBindWrite",
-    "client.RenderStateShardSetup"
+    "client.BookEditScreenAccessor"
   ],
   "mixins": [
     "AbstractContainerMenuDoClick",

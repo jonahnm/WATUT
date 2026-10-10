@@ -5,7 +5,7 @@ import com.corosus.watut.config.ConfigClient;
 import com.corosus.watut.config.ConfigCommon;
 import com.corosus.watut.config.ConfigServerControlledSyncedToClient;
 import com.corosus.watut.config.CustomArmCorrections;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.players.PlayerList;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -53,7 +53,7 @@ public abstract class WatutMod
 
     public static void generateJsonConfigFile(String filename) {
         String filePath = "config/" + filename;
-        String fileContents = getContentsFromResourceLocation(ResourceLocation.fromNamespaceAndPath(MODID, filePath));
+        String fileContents = getContentsFromResourceLocation(Identifier.fromNamespaceAndPath(MODID, filePath));
         if (!fileContents.equals("")) {
             File fileOut = new File("./config/" + filename);
             if (!fileOut.exists()) {
@@ -66,7 +66,7 @@ public abstract class WatutMod
         }
     }
 
-    public static String getContentsFromResourceLocation(ResourceLocation resourceLocation) {
+    public static String getContentsFromResourceLocation(Identifier resourceLocation) {
         try {
             //server side compatible way
             String str = "assets/" + resourceLocation.toString().replace(":", "/");
@@ -90,4 +90,24 @@ public abstract class WatutMod
     }
 
     public abstract boolean isModInstalled(String modID);
+
+    public static net.minecraft.nbt.CompoundTag itemStackToNbt(net.minecraft.world.item.ItemStack itemStack, net.minecraft.core.RegistryAccess registryAccess) {
+        net.minecraft.resources.RegistryOps<net.minecraft.nbt.Tag> ops = registryAccess.createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+        net.minecraft.nbt.Tag tag = net.minecraft.world.item.ItemStack.CODEC.encodeStart(ops, itemStack)
+                .getOrThrow(msg -> new IllegalStateException("Failed to encode ItemStack: " + msg));
+        if (tag instanceof net.minecraft.nbt.CompoundTag compoundTag) {
+            return compoundTag;
+        }
+        net.minecraft.nbt.CompoundTag wrapper = new net.minecraft.nbt.CompoundTag();
+        wrapper.put("stack", tag);
+        return wrapper;
+    }
+
+    public static net.minecraft.world.item.ItemStack nbtToItemStack(net.minecraft.nbt.CompoundTag tag, net.minecraft.core.RegistryAccess registryAccess) {
+        net.minecraft.resources.RegistryOps<net.minecraft.nbt.Tag> ops = registryAccess.createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE);
+        net.minecraft.nbt.Tag actual = tag.contains("stack") ? tag.get("stack") : tag;
+        return net.minecraft.world.item.ItemStack.CODEC.parse(ops, actual)
+                .resultOrPartial(msg -> dbg("Failed to decode ItemStack: " + msg))
+                .orElse(net.minecraft.world.item.ItemStack.EMPTY);
+    }
 }

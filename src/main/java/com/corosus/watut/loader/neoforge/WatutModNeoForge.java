@@ -14,7 +14,7 @@ import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
-import net.neoforged.neoforge.client.event.RegisterShadersEvent;
+import net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -34,7 +34,7 @@ public class WatutModNeoForge extends WatutMod {
         NeoForge.EVENT_BUS.addListener(this::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
 
-        if (FMLEnvironment.dist.isClient()) {
+        if (FMLEnvironment.getDist().isClient()) {
             ClientEvents clientEvents = new ClientEvents();
             container.getEventBus().addListener(clientEvents::getRegisteredParticles);
             NeoForge.EVENT_BUS.addListener(clientEvents::onRegisterCommandsClient);
@@ -42,11 +42,7 @@ public class WatutModNeoForge extends WatutMod {
             NeoForge.EVENT_BUS.addListener(clientEvents::onKey);
             NeoForge.EVENT_BUS.addListener(clientEvents::onMouse);
             container.getEventBus().addListener(clientEvents::reload);
-
-            //container.getEventBus().register(new RegisterShadersEvent());
-            /*ShaderRegistry.instance = new ShaderRegistry();
-            container.getEventBus().addListener(ShaderRegistry::reload);*/
-            //container.getEventBus().addListener(ShaderRegistry.instance);
+            container.getEventBus().addListener(ShaderRegistry::registerPipelines);
 
             ShaderRegistry.init();
         }

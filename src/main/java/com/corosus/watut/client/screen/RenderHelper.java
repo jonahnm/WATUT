@@ -13,10 +13,10 @@ import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.system.MemoryUtil;
@@ -36,7 +36,7 @@ import java.util.zip.Inflater;
 public class RenderHelper {
 
     public static boolean performingOwnRender = false;
-    public static ResourceLocation cursor = ResourceLocation.fromNamespaceAndPath(WatutMod.MODID, "textures/misc/mouse.png");
+    public static Identifier cursor = Identifier.fromNamespaceAndPath(WatutMod.MODID, "textures/misc/mouse.png");
 
     //xaero minimap support (doesnt capture extra elements just terrain)
     public static Class guiMap;
@@ -197,7 +197,7 @@ public class RenderHelper {
         }
     }*/
 
-    public static void guiRender(GuiGraphics guiGraphics) {
+    public static void guiRender(net.minecraft.client.gui.GuiGraphicsExtractor guiGraphics) {
         long gameTime = 0;
         if (Minecraft.getInstance().level != null) {
             gameTime = Minecraft.getInstance().level.getGameTime();
@@ -211,20 +211,18 @@ public class RenderHelper {
                 screenData.markNeedsNewRenderFromPixelData(false);
                 screenData.setGameTicksSinceLastScreenReceiveAndRender(gameTime);
 
-                ScreenParticleRenderer.getInstance().checkSetup();
-
-                if (playerStatus.getScreenData().getParticleRenderType() == null) {
-                    playerStatus.getScreenData().initClient();
-                }
-
                 if (screenData.getImage() == null) {
-                    screenData.setImage(new DynamicTexture(screenData.getWidth(), screenData.getHeight(), true));
+                    DynamicTexture dynamicTexture = new DynamicTexture("watut_screen", screenData.getWidth(), screenData.getHeight(), true);
+                    screenData.setImage(dynamicTexture);
+                    Minecraft.getInstance().getTextureManager().register(screenData.getDynamicTextureId(), dynamicTexture);
                 } else {
                     //detect a resolution change and remake buffer, only used if experimental rendering of entire screen config is on
                     //CULog.dbg("screendata sizes " + screenData.getWidth() + " " + screenData.getHeight());
                     if (screenData.getImage().getPixels().getWidth() != screenData.getWidth() || screenData.getImage().getPixels().getHeight() != screenData.getHeight()) {
                         screenData.closeImage();
-                        screenData.setImage(new DynamicTexture(screenData.getWidth(), screenData.getHeight(), true));
+                        DynamicTexture dynamicTexture = new DynamicTexture("watut_screen", screenData.getWidth(), screenData.getHeight(), true);
+                        screenData.setImage(dynamicTexture);
+                        Minecraft.getInstance().getTextureManager().register(screenData.getDynamicTextureId(), dynamicTexture);
                         CULog.dbg("screendata image resized to " + screenData.getWidth() + " " + screenData.getHeight());
                     }
                 }
@@ -243,25 +241,19 @@ public class RenderHelper {
         }
     }
 
-    public static void bindVanillaRenderTargetAndSetupProjectionMatrix() {
-        Window window = Minecraft.getInstance().getWindow();
-        Matrix4f matrix4f = (new Matrix4f()).setOrtho(0.0F, (float)((double)window.getWidth() / window.getGuiScale()), (float)((double)window.getHeight() / window.getGuiScale()), 0.0F, 1000.0F, 21000.0F/*net.minecraftforge.client.ForgeHooksClient.getGuiFarPlane()*/);
-        RenderSystem.setProjectionMatrix(matrix4f, ProjectionType.ORTHOGRAPHIC);
-
-        Minecraft.getInstance().getMainRenderTarget().bindWrite(true);
-    }
-
-    public static void unbindVanillaRenderTarget() {
-        Minecraft.getInstance().getMainRenderTarget().unbindWrite();
-    }
-
     public static boolean useDynamicGUISystem() {
         if (ConfigServerControlledSyncedToClient.dynamicGuiUseOldSimpleGUIVisual) return false;
         if (ConfigClient.dontSendDetailedGUIInfo) return false;
         return true;
     }
 
-    public static synchronized void renderWithTooltipEnd(GuiGraphics pGuiGraphics, int pMouseX, int pMouseY, float pPartialTick) {
+    /**
+     * Captures the currently displayed gui and sends it to the server.
+     * MC 26.2: called after GuiRenderer has drawn the gui to the main render target
+     * (see GuiRendererCapture mixin). The capture itself (sample + blur + readback)
+     * lives in ScreenParticleRenderer.
+     */
+    public static synchronized void captureScreen() {
         if (!useDynamicGUISystem()) return;
         if (Minecraft.getInstance().level == null || Minecraft.getInstance().player == null) {
             return;
@@ -284,147 +276,9 @@ public class RenderHelper {
 
         boolean needsScreenUpdate = playerStatusLocal.getScreenData().isNeedsNewRenderToPixelData();
 
-
-
         if (needsScreenUpdate && !processor.hasWork()) {
-
             playerStatusLocal.getScreenData().setNeedsNewRenderToPixelData(false);
-            ScreenParticleRenderer.getInstance().checkSetup();
-            unbindVanillaRenderTarget();
-            ScreenParticleRenderer.getInstance().bind();
-
-            RenderSystem.clear(16640);
-
-            if (Minecraft.getInstance().screen != null) {
-                //TODO: isRenderingParticleGUI2 cant be conditional now with the render target binding redirect mixin
-                if (ConfigServerControlledSyncedToClient.dynamicGuiDisableBackgroundRendering) {
-                    //ScreenParticleRenderer.isRenderingParticleGUI = true;
-                    ScreenParticleRenderer.isRenderingParticleGUI2 = true;
-                }
-                performingOwnRender = true;
-
-                xaeroWorldMapTextureID = -1;
-
-                if (isXaeroGuiMap(Minecraft.getInstance().screen)) {
-                    try {
-                        Object fbo = guiMapPrimaryScaleFBO.get(null);
-                        if (fbo != null) {
-                            Object colorTextureIdObj = colorTextureId.get(fbo);
-                            if (colorTextureIdObj != null) {
-                                xaeroWorldMapTextureID = (int) colorTextureIdObj;
-                            }
-                        }
-                    } catch (IllegalAccessException e) {
-                        e.printStackTrace();
-                    }
-                } else {
-                    Minecraft.getInstance().screen.renderWithTooltip(pGuiGraphics, pMouseX, pMouseY, pPartialTick);
-                }
-
-                //render our cursor
-                ScreenParticleRenderer.getInstance().innerBlit(pGuiGraphics.pose(), cursor, pMouseX, pMouseX + 6, pMouseY, pMouseY + 10, 100, 0, 1, 0, 1);
-
-                performingOwnRender = false;
-                ScreenParticleRenderer.isRenderingParticleGUI = false;
-                ScreenParticleRenderer.isRenderingParticleGUI2 = false;
-            }
-
-            //if (true) return;
-
-            //readPixelsTest();
-            ByteBuffer pixelBuffer;
-            //pixelBuffer = getPixelDataFromFrameBuffer();
-
-            ScreenParticleRenderer.getInstance().unbind();
-
-            Matrix4f matrix4f = (new Matrix4f()).setOrtho(0.0F, (float)ScreenParticleRenderer.getInstance().widthScaledDown, (float)ScreenParticleRenderer.getInstance().heightScaledDown, 0.0F, 1000.0F, 21000.0F/*net.minecraftforge.client.ForgeHooksClient.getGuiFarPlane()*/);
-            RenderSystem.setProjectionMatrix(matrix4f, ProjectionType.ORTHOGRAPHIC);
-
-            ScreenParticleRenderer.getInstance().bindScaledDown();
-
-            //ScreenParticleRenderer.isRenderingParticleGUI2 = true;
-
-            RenderSystem.clear(16640);
-
-            double guiScale = Minecraft.getInstance().getWindow().getGuiScale();
-            if (ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen) {
-                guiScale = 1;
-            }
-            int croppedWidth = (int) (ScreenParticleRenderer.getInstance().widthScaledDown * guiScale);
-            int croppedHeight = (int) (ScreenParticleRenderer.getInstance().heightScaledDown * guiScale);
-
-            int centerX = ScreenParticleRenderer.getInstance().width / 2;
-            int centerY = ScreenParticleRenderer.getInstance().height / 2;
-            int x1 = centerX - (croppedWidth / 2);
-            int x2 = centerX + (croppedWidth / 2);
-            int y1 = centerY - (croppedHeight / 2);
-            int y2 = centerY + (croppedHeight / 2);
-            float minU = (float)x1 / (float)ScreenParticleRenderer.getInstance().width;
-            float maxU = (float)x2 / (float)ScreenParticleRenderer.getInstance().width;
-            float minV = (float)y1 / (float)ScreenParticleRenderer.getInstance().height;
-            float maxV = (float)y2 / (float)ScreenParticleRenderer.getInstance().height;
-
-            x1 = 0;
-            x2 = ScreenParticleRenderer.getInstance().widthScaledDown;
-            y1 = 0;
-            y2 = ScreenParticleRenderer.getInstance().heightScaledDown;
-
-            boolean test = false;
-            if (test) {
-                ScreenParticleRenderer.getInstance().innerBlit(pGuiGraphics.pose(), cursor, pMouseX, pMouseX + 6, pMouseY, pMouseY + 10, 100, 0, 1, 0, 1);
-            } else {
-                boolean useBlur = true;
-                if (useBlur) {
-                    ScreenParticleRenderer.getInstance().innerBlitCustomShaderHorizontal(pGuiGraphics.pose()
-                            , x1, x2
-                            , y1, y2
-                            , 0
-                            , minU, maxU, minV, maxV);
-
-                /*ScreenParticleRenderer.getInstance().innerBlitCustomShaderVertical(pGuiGraphics.pose()
-                        , x1, x2
-                        , y1, y2
-                        , 0
-                        , minU, maxU, minV, maxV);*/
-
-                    ScreenParticleRenderer.getInstance().innerBlitCustomShaderVertical(pGuiGraphics.pose()
-                            , 0, ScreenParticleRenderer.getInstance().widthScaledDown
-                            , 0, ScreenParticleRenderer.getInstance().heightScaledDown
-                            , 0
-                            , 0, 1, 0, 1);
-                } else {
-                    ScreenParticleRenderer.getInstance().innerBlitCustomShader(pGuiGraphics.pose()
-                            , x1, x2
-                            , y1, y2
-                            , 0
-                            , minU, maxU, minV, maxV);
-                }
-            }
-
-
-            //if (true) return;
-
-            //TEST
-            //bindVanillaRenderTargetAndSetupProjectionMatrix();
-            //readPixelsTest();
-
-            //getting data from scaled down framebuffer
-            //ByteBuffer pixelBuffer = getPixelDataFromFrameBuffer();
-            pixelBuffer = getPixelDataFromFrameBuffer();
-            //readPixelsTest();
-
-            boolean useThread = true;
-            if (useThread) {
-                processor.submitForProcessing(pixelBuffer);
-            } else {
-                ByteBuffer byteBuffer = compress(pixelBuffer);
-                playerStatusLocal.getScreenData().setTexturePixelData(byteBuffer);
-                WatutMod.getPlayerStatusManagerClient().sendScreenRenderData(playerStatusLocal);
-            }
-
-            ScreenParticleRenderer.getInstance().unbindScaledDown();
-
-            bindVanillaRenderTargetAndSetupProjectionMatrix();
+            ScreenParticleRenderer.getInstance().captureAndReadback();
         }
     }
 

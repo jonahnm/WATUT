@@ -1,40 +1,38 @@
 package com.corosus.watut.particle;
 
-import com.corosus.watut.client.ParticleRenderTypeOld;
 import com.corosus.watut.client.screen.ScreenParticleRenderer;
 import com.corosus.watut.config.ConfigClient;
 import com.corosus.watut.config.ConfigServerControlledSyncedToClient;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
+import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 public class ParticleDynamic extends ParticleRotating {
 
-    public ParticleRenderTypeOld particleRenderType;
+    public SingleQuadParticle.Layer dynamicLayer;
 
-    public ParticleRenderTypeOld getRenderTypeOld() {
-        return particleRenderType;
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {
+        return dynamicLayer;
     }
 
-
-    public ParticleDynamic(ClientLevel pLevel, double pX, double pY, double pZ, ParticleRenderTypeOld particleRenderType) {
-        this(pLevel, pX, pY, pZ, particleRenderType, 1F);
+    public ParticleDynamic(ClientLevel pLevel, double pX, double pY, double pZ, SingleQuadParticle.Layer layer) {
+        this(pLevel, pX, pY, pZ, layer, 1F);
     }
 
-    public ParticleDynamic(ClientLevel pLevel, double pX, double pY, double pZ, ParticleRenderTypeOld particleRenderType, float brightness) {
+    public ParticleDynamic(ClientLevel pLevel, double pX, double pY, double pZ, SingleQuadParticle.Layer layer, float brightness) {
         super(pLevel, pX, pY, pZ);
-        this.particleRenderType = particleRenderType;
+        this.dynamicLayer = layer;
         this.lifetime = Integer.MAX_VALUE;
         this.gravity = 0.0F;
         this.setSize(0.2F, 0.2F);
         this.quadSize = 0.5F;
-        //this.quadSize = 1F;
         this.xd = 0;
         this.yd = 0;
         this.zd = 0;
@@ -57,66 +55,34 @@ public class ParticleDynamic extends ParticleRotating {
         }
     }
 
-    public void render(VertexConsumer pBuffer, Camera pRenderInfo, float pPartialTicks) {
-        Vec3 vec3 = pRenderInfo.getPosition();
-        float f = (float)(Mth.lerp(pPartialTicks, this.xo, this.x) - vec3.x());
-        float f1 = (float)(Mth.lerp(pPartialTicks, this.yo, this.y) - vec3.y());
-        float f2 = (float)(Mth.lerp(pPartialTicks, this.zo, this.z) - vec3.z());
+    @Override
+    public void extract(QuadParticleRenderState particleTypeRenderState, Camera camera, float partialTick) {
+        Vec3 vec3 = camera.position();
+        float f = (float)(Mth.lerp(partialTick, this.xo, this.x) - vec3.x());
+        float f1 = (float)(Mth.lerp(partialTick, this.yo, this.y) - vec3.y());
+        float f2 = (float)(Mth.lerp(partialTick, this.zo, this.z) - vec3.z());
         Quaternionf quaternion;
         if (useCustomRotation) {
             quaternion = new Quaternionf(0, 0, 0, 1);
-            quaternion.mul(Axis.YP.rotationDegrees(Mth.lerp(pPartialTicks, this.prevRotationYaw, rotationYaw)));
-            quaternion.mul(Axis.XP.rotationDegrees(Mth.lerp(pPartialTicks, this.prevRotationPitch, rotationPitch)/* + 180*/));
-            quaternion.mul(Axis.ZP.rotationDegrees(Mth.lerp(pPartialTicks, this.prevRotationRoll, rotationRoll)));
+            quaternion.mul(Axis.YP.rotationDegrees(Mth.lerp(partialTick, this.prevRotationYaw, rotationYaw)));
+            quaternion.mul(Axis.XP.rotationDegrees(Mth.lerp(partialTick, this.prevRotationPitch, rotationPitch)));
+            quaternion.mul(Axis.ZP.rotationDegrees(Mth.lerp(partialTick, this.prevRotationRoll, rotationRoll)));
         } else {
             if (this.roll == 0.0F) {
-                quaternion = pRenderInfo.rotation();
+                quaternion = camera.rotation();
             } else {
-                quaternion = new Quaternionf(pRenderInfo.rotation());
-                quaternion.rotateZ(Mth.lerp(pPartialTicks, this.oRoll, this.roll));
+                quaternion = new Quaternionf(camera.rotation());
+                quaternion.rotateZ(Mth.lerp(partialTick, this.oRoll, this.roll));
             }
         }
 
-        //Vector3f[] avector3f = new Vector3f[]{new Vector3f(-1.0F, -1.0F, 0.0F), new Vector3f(-1.0F, 1.0F, 0.0F), new Vector3f(1.0F, 1.0F, 0.0F), new Vector3f(1.0F, -1.0F, 0.0F)};
-        //float aspectRatio = 1920F/1080F;
-        float aspectRatio = (float) ScreenParticleRenderer.getInstance().widthScaledDown / (float)ScreenParticleRenderer.getInstance().heightScaledDown;
-        float height = 1F / aspectRatio;
-        //height = 1;
-        Vector3f[] avector3f = new Vector3f[]{
-                new Vector3f(-1.0F, height, 0.0F),
-                new Vector3f(-1.0F, -height, 0.0F),
-                new Vector3f(1.0F, -height, 0.0F),
-                new Vector3f(1.0F, height, 0.0F)};
-        float f3 = this.getQuadSize(pPartialTicks);
+        float f3 = this.getQuadSize(partialTick);
+        int light = this.getLightCoords(partialTick);
+        int color = ARGB.colorFromFloat(this.alpha, this.rCol, this.gCol, this.bCol);
 
-        for(int i = 0; i < 4; ++i) {
-            Vector3f vector3f = avector3f[i];
-            vector3f.rotate(quaternion);
-            //vector3f.mul(f3 * 6F);
-            if (ConfigServerControlledSyncedToClient.dynamicGuiShowClientsEntireScreen) {
-                vector3f.mul((float) (f3 * 4F * ConfigClient.particleSizeScale));
-            } else {
-                vector3f.mul((float) (f3 * 2F * ConfigClient.particleSizeScale));
-            }
-            vector3f.add(f, f1, f2);
-        }
-
-        /*float u0 = this.getU0();
-        float u1 = this.getU1();
-        float v0 = this.getV0();
-        float v1 = this.getV1();*/
-
-        float u0 = 0;
-        float u1 = 1;
-        float v0 = 0;
-        float v1 = 1;
-
-        int j = this.getLightColor(pPartialTicks);
-        float extraDark = this.getBrightness();
-        pBuffer.addVertex(avector3f[0].x(), avector3f[0].y(), avector3f[0].z()).setUv(u1, v1).setColor(this.rCol, this.gCol, this.bCol, this.alpha).setLight(j);
-        pBuffer.addVertex(avector3f[1].x(), avector3f[1].y(), avector3f[1].z()).setUv(u1, v0).setColor(this.rCol, this.gCol, this.bCol, this.alpha).setLight(j);
-        pBuffer.addVertex(avector3f[2].x(), avector3f[2].y(), avector3f[2].z()).setUv(u0, v0).setColor(this.rCol, this.gCol, this.bCol, this.alpha).setLight(j);
-        pBuffer.addVertex(avector3f[3].x(), avector3f[3].y(), avector3f[3].z()).setUv(u0, v1).setColor(this.rCol, this.gCol, this.bCol, this.alpha).setLight(j);
+        //note: aspect ratio handling of the full screen quad is done via the layer texture itself
+        particleTypeRenderState.add(this.getLayer(), f, f1, f2,
+                quaternion.x, quaternion.y, quaternion.z, quaternion.w,
+                f3, 0.0F, 1.0F, 0.0F, 1.0F, color, light);
     }
-
 }

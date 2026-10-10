@@ -1,21 +1,12 @@
 package com.corosus.watut.client.screen;
 
-import com.corosus.watut.PlayerStatusManagerClient;
-import com.corosus.watut.client.ParticleRenderTypeOld;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.particle.ParticleRenderType;
-import net.minecraft.client.renderer.CoreShaders;
-import net.minecraft.client.renderer.GameRenderer;
+import com.corosus.watut.WatutMod;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.texture.TextureManager;
-import net.minecraft.world.level.Level;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.gui.screens.Screen;
 import org.jetbrains.annotations.Nullable;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,14 +18,12 @@ public class ScreenData {
     private final AtomicBoolean isBufferReady = new AtomicBoolean(false);
     private byte[] texturePixelDataPartial = null;
 
-    //private byte[] texturePixelDataDiff = null;
-
     private long gameTicksSinceFirstPacket = 0;
     private int lastIndexReceived = 0;
     private long gameTicksSinceLastScreenSend = 0;
     private long gameTicksSinceLastScreenReceiveAndRender = 0;
 
-    private ParticleRenderTypeOld particleRenderType;
+    private Identifier dynamicTextureId;
 
     private boolean needsNewRenderFromPixelData = false;
 
@@ -50,32 +39,8 @@ public class ScreenData {
 
     public static boolean testing = false;
 
-    public void initClient() {
-
-        this.particleRenderType = new ParticleRenderTypeOld() {
-            public @Nullable BufferBuilder begin(Tesselator tesselator, TextureManager textureManager) {
-                //oculus breaks our shader for some reason
-                if (RenderHelper.isShadersEnabled() || testing) {
-                    RenderSystem.setShader(CoreShaders.PARTICLE);
-                } else {
-                    RenderSystem.setShader(PlayerStatusManagerClient.particle.getProgram());
-                }
-                RenderSystem.setShaderTexture(0, getImage().getId());
-
-                RenderSystem.depthMask(true);
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
-                RenderSystem.disableCull();
-                return tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
-            }
-
-            public String toString() {
-                return "DYNAMIC_TEXTURE";
-            }
-        };
-
-        //WatutMod.instance().addParticleRenderType(particleRenderType);
-
+    public ScreenData() {
+        this.dynamicTextureId = Identifier.fromNamespaceAndPath(WatutMod.MODID, "dynamic_gui/" + java.util.UUID.randomUUID());
     }
 
     public ByteBuffer getTexturePixelData() {
@@ -84,7 +49,7 @@ public class ScreenData {
 
     public void freeTexturePixelData() {
         if (texturePixelData != null) {
-            MemoryUtil.memFree(texturePixelData);
+            org.lwjgl.system.MemoryUtil.memFree(texturePixelData);
         }
     }
 
@@ -92,12 +57,20 @@ public class ScreenData {
         this.texturePixelData = texturePixelData;
     }
 
-    public ParticleRenderTypeOld getParticleRenderType() {
-        return particleRenderType;
+    /**
+     * Layer used by ParticleDynamic to render this player's captured gui as a billboard.
+     * Null until the dynamic texture has been created and registered.
+     */
+    @Nullable
+    public SingleQuadParticle.Layer getLayer() {
+        if (image == null || dynamicTextureId == null) {
+            return null;
+        }
+        return new SingleQuadParticle.Layer(true, dynamicTextureId, RenderPipelines.TRANSLUCENT_PARTICLE);
     }
 
-    public void setParticleRenderType(ParticleRenderTypeOld particleRenderType) {
-        this.particleRenderType = particleRenderType;
+    public Identifier getDynamicTextureId() {
+        return dynamicTextureId;
     }
 
     public synchronized boolean needsNewRenderFromPixelData() {
@@ -205,12 +178,4 @@ public class ScreenData {
     public void setLastScreen(Screen lastScreen) {
         this.lastScreen = lastScreen;
     }
-
-    /*public byte[] getTexturePixelDataDiff() {
-        return texturePixelDataDiff;
-    }
-
-    public void setTexturePixelDataDiff(byte[] texturePixelDataDiff) {
-        this.texturePixelDataDiff = texturePixelDataDiff;
-    }*/
 }

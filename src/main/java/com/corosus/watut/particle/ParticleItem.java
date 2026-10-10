@@ -1,23 +1,17 @@
 package com.corosus.watut.particle;
 
 import com.corosus.coroutil.util.CULog;
-import com.corosus.watut.client.ParticleRenderTypeOld;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.math.Axis;
-import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.RenderBuffers;
-import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
-import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.sprite.Material;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Quaternionf;
 
 import java.util.HashSet;
 
@@ -25,11 +19,7 @@ public class ParticleItem extends ParticleRotating {
 
     public static HashSet<String> itemBlacklist = new HashSet<>();
 
-    public BakedModel bakedModel;
-    public ItemStackRenderState scratchItemStackRenderState;
     public ItemStack itemStack;
-    private final RenderBuffers renderBuffers;
-    private final EntityRenderDispatcher entityRenderDispatcher;
     public float xFrom;
     public float yFrom;
     public float zFrom;
@@ -37,7 +27,9 @@ public class ParticleItem extends ParticleRotating {
     public float yTo;
     public float zTo;
 
-    public ParticleItem(ClientLevel pLevel, float brightness, ItemStack itemStack, RenderBuffers renderBuffers, EntityRenderDispatcher entityRenderDispatcher, float xFrom, float yFrom, float zFrom, float xTo, float yTo, float zTo) {
+    private final SingleQuadParticle.Layer spriteLayer;
+
+    public ParticleItem(ClientLevel pLevel, float brightness, ItemStack itemStack, float xFrom, float yFrom, float zFrom, float xTo, float yTo, float zTo) {
         super(pLevel, xFrom, yFrom, zFrom);
         this.lifetime = Integer.MAX_VALUE;
         this.gravity = 0.0F;
@@ -54,35 +46,30 @@ public class ParticleItem extends ParticleRotating {
         this.zTo = zTo;
         this.setColor(this.getColorRed() * brightness, this.getColorGreen() * brightness, this.getColorBlue() * brightness);
 
-        scratchItemStackRenderState = new ItemStackRenderState();
-        Minecraft.getInstance()
-                .getItemModelResolver()
-                .updateForTopItem(this.scratchItemStackRenderState, itemStack, ItemDisplayContext.GROUND, false, level, null, 0);
         this.itemStack = itemStack;
-        this.entityRenderDispatcher = entityRenderDispatcher;
+
+        ItemStackRenderState scratchItemStackRenderState = new ItemStackRenderState();
+        TextureAtlasSprite sprite;
+        try {
+            Minecraft.getInstance()
+                    .getItemModelResolver()
+                    .updateForTopItem(scratchItemStackRenderState, itemStack, ItemDisplayContext.GROUND, pLevel, null, 0);
+            Material.Baked material = scratchItemStackRenderState.pickParticleMaterial(this.random);
+            sprite = material != null ? material.sprite() : Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(AtlasIds.ITEMS).missingSprite();
+        } catch (Exception exception) {
+            CULog.err("ERROR, exception resolving item particle sprite: " + itemStack.getItem().toString() + " - adding to ParticleItem render blacklist for this minecraft session");
+            itemBlacklist.add(itemStack.getItem().toString());
+            sprite = Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(AtlasIds.ITEMS).missingSprite();
+        }
+        this.sprite = sprite;
+        this.spriteLayer = SingleQuadParticle.Layer.bySprite(sprite);
+
         this.rotationYaw = pLevel.getRandom().nextFloat() * 360;
-        this.renderBuffers = renderBuffers;
     }
 
     @Override
-    public ParticleRenderTypeOld getRenderTypeOld() {
-        return TERRAIN_SHEET_TRANSLUCENT_NO_FACE_CULL;
-    }
-
-    protected float getU0() {
-        return bakedModel.getParticleIcon().getU0();
-    }
-
-    protected float getU1() {
-        return bakedModel.getParticleIcon().getU1();
-    }
-
-    protected float getV0() {
-        return bakedModel.getParticleIcon().getV0();
-    }
-
-    protected float getV1() {
-        return bakedModel.getParticleIcon().getV1();
+    protected SingleQuadParticle.Layer getLayer() {
+        return this.spriteLayer;
     }
 
     public void setSize(float pWidth, float pHeight) {
@@ -101,23 +88,19 @@ public class ParticleItem extends ParticleRotating {
         }
     }
 
-    public void render(VertexConsumer pBuffer, Camera pRenderInfo, float pPartialTicks) {
-
+    @Override
+    public void extract(net.minecraft.client.renderer.state.level.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
         if (itemBlacklist.contains(this.itemStack.getItem().toString())) return;
 
-        Vec3 vec3 = pRenderInfo.getPosition();
-        float f = (float)(Mth.lerp(pPartialTicks, this.xo, this.x));
-        float f1 = (float)(Mth.lerp(pPartialTicks, this.yo, this.y));
-        float f2 = (float)(Mth.lerp(pPartialTicks, this.zo, this.z));
+        Vec3 vec3 = camera.position();
+        float f = (float)(Mth.lerp(partialTick, this.xo, this.x));
+        float f1 = (float)(Mth.lerp(partialTick, this.yo, this.y));
+        float f2 = (float)(Mth.lerp(partialTick, this.zo, this.z));
 
-        float lerp = ((float)this.age + pPartialTicks) / 3.0F;
-        //lerp *= lerp;
-        double d0 = xTo;
-        double d1 = yTo;
-        double d2 = zTo;
-        double x = Mth.lerp(lerp, f, d0);
-        double y = Mth.lerp(lerp, f1, d1);
-        double z = Mth.lerp(lerp, f2, d2);
+        float lerp = ((float)this.age + partialTick) / 3.0F;
+        double x = Mth.lerp(lerp, f, xTo);
+        double y = Mth.lerp(lerp, f1, yTo);
+        double z = Mth.lerp(lerp, f2, zTo);
 
         if (this.age >= 3) {
             x = xTo;
@@ -126,32 +109,18 @@ public class ParticleItem extends ParticleRotating {
         }
 
         x = x - vec3.x();
-        y = y - vec3.y();
+        y = y - vec3.y() - 0.15;
         z = z - vec3.z();
 
-        int j = this.getLightColor(pPartialTicks);
+        int light = this.getLightCoords(partialTick);
+        int color = net.minecraft.util.ARGB.colorFromFloat(this.alpha, this.rCol, this.gCol, this.bCol);
 
-        Quaternionf quaternion = new Quaternionf(0, 0, 0, 1);
-        quaternion.mul(Axis.YP.rotationDegrees(this.rotationYaw));
+        org.joml.Quaternionf quaternion = new org.joml.Quaternionf(0, 0, 0, 1);
+        quaternion.mul(com.mojang.math.Axis.YP.rotationDegrees(this.rotationYaw));
 
-        PoseStack pose = new PoseStack();
-        pose.pushPose();
-        pose.translate(x, y - 0.15, z);
-        pose.scale(quadSize, quadSize, quadSize);
-        pose.rotateAround(quaternion, 0, 1, 0);
-
-        //RenderSystem.disableDepthTest();
-        //RenderSystem.depthMask(false);
-        try {
-            //Minecraft.getInstance().getItemRenderer().render(itemStack, ItemDisplayContext.GROUND, false, pose, renderBuffers.bufferSource(), j, OverlayTexture.NO_OVERLAY, bakedModel);
-            this.scratchItemStackRenderState.render(pose, renderBuffers.bufferSource(), 15728880, OverlayTexture.NO_OVERLAY);
-            renderBuffers.bufferSource().endBatch();
-        } catch (Exception exception) {
-            CULog.err("ERROR, exception trying to render item: " + this.itemStack.getItem().toString() + " - adding to ParticleItem render blacklist for this minecraft session");
-            itemBlacklist.add(this.itemStack.getItem().toString());
-            exception.printStackTrace();
-        }
-
+        state.add(this.getLayer(), (float)x, (float)y, (float)z,
+                quaternion.x, quaternion.y, quaternion.z, quaternion.w,
+                this.quadSize, this.getU0(), this.getU1(), this.getV0(), this.getV1(), color, light);
     }
 
 }
